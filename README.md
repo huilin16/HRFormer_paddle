@@ -29,6 +29,7 @@ python -m paddle.distributed.launch $PDCS_DIR/tools/train.py \
 
 
 * train process1: train 300 epoch, top1 acc 77.1
+  * [config1](config/hrt.yml)
   * log:
     * [0-50eooch](log/trainer-0_50.log)
     * [50-100eooch](log/trainer-50_100.log)
@@ -39,6 +40,7 @@ python -m paddle.distributed.launch $PDCS_DIR/tools/train.py \
   * [acc plot1](log/train1.png)
   * [model1](model/train1/latest.pdparams)
 * train process2: base 77.1 model, train 50 epoch, top1 acc 77.3
+  * [config2](config/hrt2.yml)
   * log: [add50epoch](log/trainer-add50.log)
   * [acc plot2](log/train2.png)
   * [model2](model/train2/latest.pdparams)
