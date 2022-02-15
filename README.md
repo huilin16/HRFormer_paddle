@@ -4,8 +4,6 @@ An paddle implementation of  NeurIPS 2021 paper "HRFormer: High-Resolution Trans
 
 This project is based on [PaddleClas](https://github.com/PaddlePaddle/PaddleClas)
 
-
-
 Reproduction results：
 
 * Top-1 acc.：77.3
@@ -18,15 +16,7 @@ python -m paddle.distributed.launch $PDCS_DIR/tools/train.py \
     -o Global.device=gpu \
     -o DataLoader.Train.sampler.batch_size=128 \
     -o DataLoader.Eval.sampler.batch_size=256
-
-python -m paddle.distributed.launch $PDCS_DIR/tools/train.py \
-    -c $PDCS_DIR/hrt2.yml \
-    -o Global.checkpoints="/root/paddlejob/workspace/code/epoch_300" \
-    -o Global.device=gpu \
-    -o DataLoader.Train.sampler.batch_size=128 \
-    -o DataLoader.Eval.sampler.batch_size=256
 ```
-
 
 * train process1: train 300 epoch, top1 acc 77.1
   * [config1](config/hrt.yml)
@@ -44,6 +34,5 @@ python -m paddle.distributed.launch $PDCS_DIR/tools/train.py \
   * log: [add50epoch](log/trainer-add50.log)
   * [acc plot2](log/train2.png)
   * [model2](model/train2/latest.pdparams)
-
 
 This is a Beta version, some bugs still exist, these will be fixed in the following versions.
