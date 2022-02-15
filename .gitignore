@@ -9,5 +9,4 @@ pretrained/
 *.ipynb*
 _build/
 build/
-log/
 nohup.out
