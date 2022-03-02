@@ -30,47 +30,44 @@ from ppcls.utils.save_load import load_dygraph_pretrain, load_dygraph_pretrain_f
 from .hrt_utils import Bottleneck, _make_layer, GeneralTransformerBlock, BottleneckDWP
 
 MODEL_URLS = {
-    "HRFormer_tiny":None,
-    "HRFormer_small":None,
-    "HRFormer_base":None,
+    "HRFormer_tiny": None,
+    "HRFormer_small": None,
+    "HRFormer_base": None,
 }
 
 blocks_dict = {
     "BOTTLENECK": Bottleneck,
     "TRANSFORMER_BLOCK": GeneralTransformerBlock,
-    "BOTTLENECKDWP":BottleneckDWP,
+    "BOTTLENECKDWP": BottleneckDWP,
 }
 
 __all__ = list(MODEL_URLS.keys())
 BN_MOMENTUM = 0.1
 
+
 class HRTransformer(TheseusLayer):
     '''
     '''
-    def __init__(self, 
-                #  width=18, 
-                 in_chans=3, 
+
+    def __init__(self,
+                 in_chans=3,
                  class_num=1000,
-                 win_size=7,
-                 mlp_ratios=4,
-                 num_blocks=[2,2,2,2],
-                 num_modules=[1,1,3,2],
-                 num_channels=[18,36,72,144],
-                 num_heads=[1,2,4,8],
-                 num_branches=[1,2,3,4],
-                 num_window_sizes=[7,7,7,7],
-                 num_mlp_ratios=[4,4,4,4],
+                 num_blocks=[2, 2, 2, 2],
+                 num_modules=[1, 1, 3, 2],
+                 num_channels1=64,
+                 num_channels=[18, 36, 72, 144],
+                 num_heads=[1, 2, 4, 8],
+                 num_branches=[1, 2, 3, 4],
+                 num_window_sizes=[7, 7, 7, 7],
+                 num_mlp_ratios=[4, 4, 4, 4],
                  drop_path_rate=0,
                  blocks=['BOTTLENECK', 'TRANSFORMER_BLOCK', 'TRANSFORMER_BLOCK', 'TRANSFORMER_BLOCK'],
-                 resolutions=[56,28,14,7],
-                 attn_types=['isa_local', [2,2,1], [2,3,3], [2,4,2]],
-                 ffn_types=['conv_mlp', [2,2,1], [2,3,3], [2,4,2]],
-                #  attn_types=['isa_local', [2,2,1], [2,3,4], [2,4,2]],
-                #  ffn_types=['conv_mlp', [2,2,1], [2,3,4], [2,4,2]],
+                 resolutions=[56, 28, 14, 7],
+                 attn_types=['isa_local', [2, 2, 1], [2, 3, 3], [2, 4, 2]],
+                 ffn_types=['conv_mlp', [2, 2, 1], [2, 3, 3], [2, 4, 2]],
                  final_channels=2048,
                  head_block='BOTTLENECKDWP',
-                 head_channels = [32, 64, 128, 256],
-
+                 head_channels=[32, 64, 128, 256],
                  ):
         super().__init__()
         # parameters
@@ -82,16 +79,20 @@ class HRTransformer(TheseusLayer):
         num_inchannels2 = [num_channels[i] * blocks_dict[blocks[1]].expansion for i in range(len(num_channels[:2]))]
         num_inchannels3 = [num_channels[i] * blocks_dict[blocks[2]].expansion for i in range(len(num_channels[:3]))]
         num_inchannels4 = [num_channels[i] * blocks_dict[blocks[3]].expansion for i in range(len(num_channels[:4]))]
-        num_outchannels1 = [blocks_dict[blocks[0]].expansion * num_channels[0]]
+        num_outchannels1 = [blocks_dict[blocks[0]].expansion * num_channels1]
 
         # archeticture
         self.down_stem = Conv_Stem(in_chans=in_chans)
-        self.layer1 = _make_layer(block=blocks_dict[blocks[0]], 
-                                  inplanes=64, 
-                                  planes=num_channels[0], 
+        self.layer1 = _make_layer(block=blocks_dict[blocks[0]],
+                                  inplanes=64,
+                                  planes=num_channels1,
                                   blocks=num_blocks[0])
-        self.stage2 = Stage(block=blocks_dict[blocks[1]], 
-                            num_modules=num_modules[1], 
+        self.transition1 = Transition(num_branches=num_branches[1],
+                                      num_channels_pre_layer=num_outchannels1,
+                                      num_channels_cur_layer=num_channels[:2])
+
+        self.stage2 = Stage(block=blocks_dict[blocks[1]],
+                            num_modules=num_modules[1],
                             num_branches=num_branches[1],
                             num_blocks=num_blocks[:2],
                             num_channels=num_channels[:2],
@@ -101,11 +102,15 @@ class HRTransformer(TheseusLayer):
                             num_mlp_ratios=num_mlp_ratios[:2],
                             num_input_resolutions=resolutions[:2],
                             drop_paths=dpr[0:depth2],
-                            attn_types=[attn_types[0],attn_types[1]],
-                            ffn_types=[ffn_types[0],ffn_types[1]],
+                            attn_types=[attn_types[0], attn_types[1]],
+                            ffn_types=[ffn_types[0], ffn_types[1]],
                             )
-        self.stage3 = Stage(block=blocks_dict[blocks[2]], 
-                            num_modules=num_modules[2], 
+        self.transition2 = Transition(num_branches=num_branches[2],
+                                      num_channels_pre_layer=self.stage2.num_inchannels,
+                                      num_channels_cur_layer=num_channels[:3])
+
+        self.stage3 = Stage(block=blocks_dict[blocks[2]],
+                            num_modules=num_modules[2],
                             num_branches=num_branches[2],
                             num_blocks=num_blocks[:3],
                             num_channels=num_channels[:3],
@@ -114,12 +119,16 @@ class HRTransformer(TheseusLayer):
                             num_window_sizes=num_window_sizes[:3],
                             num_mlp_ratios=num_mlp_ratios[:3],
                             num_input_resolutions=resolutions[:3],
-                            drop_paths=dpr[depth2 : depth2 + depth3],
-                            attn_types=[attn_types[0],attn_types[2]],
-                            ffn_types=[ffn_types[0],ffn_types[2]],
+                            drop_paths=dpr[depth2: depth2 + depth3],
+                            attn_types=[attn_types[0], attn_types[2]],
+                            ffn_types=[ffn_types[0], ffn_types[2]],
                             )
-        self.stage4 = Stage(block=blocks_dict[blocks[3]], 
-                            num_modules=num_modules[3], 
+        self.transition3 = Transition(num_branches=num_branches[3],
+                                      num_channels_pre_layer=self.stage3.num_inchannels,
+                                      num_channels_cur_layer=num_channels[:4])
+
+        self.stage4 = Stage(block=blocks_dict[blocks[3]],
+                            num_modules=num_modules[3],
                             num_branches=num_branches[3],
                             num_blocks=num_blocks[:4],
                             num_channels=num_channels[:4],
@@ -128,23 +137,13 @@ class HRTransformer(TheseusLayer):
                             num_window_sizes=num_window_sizes[:4],
                             num_mlp_ratios=num_mlp_ratios[:4],
                             num_input_resolutions=resolutions[:4],
-                            drop_paths=dpr[depth2 + depth3 :],
-                            attn_types=[attn_types[0],attn_types[3]],
-                            ffn_types=[ffn_types[0],ffn_types[3]],
+                            drop_paths=dpr[depth2 + depth3:],
+                            attn_types=[attn_types[0], attn_types[3]],
+                            ffn_types=[ffn_types[0], ffn_types[3]],
                             )
 
-        self.transition1 = Transition(num_branches=num_branches[1],
-                                      num_channels_pre_layer=num_outchannels1, 
-                                      num_channels_cur_layer=num_channels[:2])
-        self.transition2 = Transition(num_branches=num_branches[2],
-                                      num_channels_pre_layer=self.stage2.num_inchannels, 
-                                      num_channels_cur_layer=num_channels[:3])
-        self.transition3 = Transition(num_branches=num_branches[3],
-                                      num_channels_pre_layer=self.stage3.num_inchannels, 
-                                      num_channels_cur_layer=num_channels[:4])
-
-        self.class_head = Class_Head(class_num, 
-                                     self.stage4.num_inchannels, 
+        self.class_head = Class_Head(class_num,
+                                     self.stage4.num_inchannels,
                                      inter_channels=final_channels,
                                      head_block=blocks_dict[head_block],
                                      head_channels=head_channels)
@@ -171,13 +170,15 @@ class Conv_Stem(TheseusLayer):
     '''
     conv stem for HRFormer
     '''
+
     def __init__(self, in_chans=3):
         super().__init__()
-        self.conv1 = nn.Conv2D(3, 64, kernel_size=3, stride=2, padding=1, bias_attr=None)
+        self.conv1 = nn.Conv2D(3, 64, kernel_size=3, stride=2, padding=1, bias_attr=False)
         self.bn1 = nn.BatchNorm2D(64, momentum=BN_MOMENTUM)
-        self.conv2 = nn.Conv2D(64, 64, kernel_size=3, stride=2, padding=1, bias_attr=None)
+        self.conv2 = nn.Conv2D(64, 64, kernel_size=3, stride=2, padding=1, bias_attr=False)
         self.bn2 = nn.BatchNorm2D(64, momentum=BN_MOMENTUM)
         self.relu = nn.ReLU()
+
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
@@ -187,10 +188,12 @@ class Conv_Stem(TheseusLayer):
         x = self.relu(x)
         return x
 
+
 class Transition(TheseusLayer):
-    ''' 
-    
     '''
+
+    '''
+
     def __init__(self, num_branches, num_channels_pre_layer, num_channels_cur_layer):
         super().__init__()
         self.num_branches = num_branches
@@ -255,12 +258,13 @@ class Transition(TheseusLayer):
                 x_list.append(x_input)
         return x_list
 
+
 class Stage(TheseusLayer):
-    def __init__(self, 
+    def __init__(self,
                  block,
-                 num_modules, 
-                 num_branches, 
-                 num_blocks, 
+                 num_modules,
+                 num_branches,
+                 num_blocks,
                  num_channels,
                  num_inchannels,
                  num_heads,
@@ -275,11 +279,11 @@ class Stage(TheseusLayer):
         super().__init__()
         num_input_resolutions = [[res, res] for res in num_input_resolutions]
         if isinstance(attn_types, list) and attn_types[1] is not None:
-            attn_types = [[[attn_types[0]]*attn_types[1][0]]*attn_types[1][1]]*attn_types[1][2]
+            attn_types = [[[attn_types[0]] * attn_types[1][0]] * attn_types[1][1]] * attn_types[1][2]
         else:
             attn_types = None
         if isinstance(ffn_types, list) and ffn_types[1] is not None:
-            ffn_types = [[[ffn_types[0]]*ffn_types[1][0]]*ffn_types[1][1]]*ffn_types[1][2]
+            ffn_types = [[[ffn_types[0]] * ffn_types[1][0]] * ffn_types[1][1]] * ffn_types[1][2]
         else:
             ffn_types = None
 
@@ -317,22 +321,23 @@ class Stage(TheseusLayer):
         x = self.stage(x)
         return x
 
+
 class HighResolutionTransformerModule(nn.Layer):
     def __init__(
-        self,
-        num_branches,
-        blocks,
-        num_blocks,
-        num_inchannels,
-        num_channels,
-        num_heads,
-        num_window_sizes,
-        num_mlp_ratios,
-        num_input_resolutions,
-        attn_types,
-        ffn_types,
-        multi_scale_output=True,
-        drop_paths=0.0,
+            self,
+            num_branches,
+            blocks,
+            num_blocks,
+            num_inchannels,
+            num_channels,
+            num_heads,
+            num_window_sizes,
+            num_mlp_ratios,
+            num_input_resolutions,
+            attn_types,
+            ffn_types,
+            multi_scale_output=True,
+            drop_paths=0.0,
     ):
         """
         Args:
@@ -373,7 +378,7 @@ class HighResolutionTransformerModule(nn.Layer):
         self.ffn_types = ffn_types
 
     def _check_branches(
-        self, num_branches, blocks, num_blocks, num_inchannels, num_channels
+            self, num_branches, blocks, num_blocks, num_inchannels, num_channels
     ):
         if num_branches != len(num_blocks):
             error_msg = "NUM_BRANCHES({}) <> NUM_BLOCKS({})".format(
@@ -397,25 +402,25 @@ class HighResolutionTransformerModule(nn.Layer):
             raise ValueError(error_msg)
 
     def _make_one_branch(
-        self,
-        branch_index,
-        block,
-        num_blocks,
-        num_channels,
-        num_input_resolutions,
-        num_heads,
-        num_window_sizes,
-        num_mlp_ratios,
-        attn_types,
-        ffn_types,
-        drop_paths,
-        stride=1,
+            self,
+            branch_index,
+            block,
+            num_blocks,
+            num_channels,
+            num_input_resolutions,
+            num_heads,
+            num_window_sizes,
+            num_mlp_ratios,
+            attn_types,
+            ffn_types,
+            drop_paths,
+            stride=1,
     ):
         downsample = None
         if (
-            stride != 1
-            or self.num_inchannels[branch_index]
-            != num_channels[branch_index] * block.expansion
+                stride != 1
+                or self.num_inchannels[branch_index]
+                != num_channels[branch_index] * block.expansion
         ):
             downsample = nn.Sequential(
                 nn.Conv2D(
@@ -463,18 +468,18 @@ class HighResolutionTransformerModule(nn.Layer):
         return nn.Sequential(*layers)
 
     def _make_branches(
-        self,
-        num_branches,
-        block,
-        num_blocks,
-        num_channels,
-        num_input_resolutions,
-        num_heads,
-        num_window_sizes,
-        num_mlp_ratios,
-        attn_types,
-        ffn_types,
-        drop_paths,
+            self,
+            num_branches,
+            block,
+            num_blocks,
+            num_channels,
+            num_input_resolutions,
+            num_heads,
+            num_window_sizes,
+            num_mlp_ratios,
+            attn_types,
+            ffn_types,
+            drop_paths,
     ):
         branches = []
 
@@ -623,16 +628,17 @@ class Class_Head(TheseusLayer):
     '''
     class head for HRFormer
     '''
-    def __init__(self, 
-                 class_num, 
-                 pre_stage_channels, 
-                 inter_channels=2048, 
-                 head_block = BottleneckDWP,
-                 head_channels = [32, 64, 128, 256]):
+
+    def __init__(self,
+                 class_num,
+                 pre_stage_channels,
+                 inter_channels=2048,
+                 head_block=BottleneckDWP,
+                 head_channels=[32, 64, 128, 256]):
         super().__init__()
         self.inter_channels = inter_channels
         self.class_num = class_num
-        
+
         # Increasing the #channels on each resolution
         # from C, 2C, 4C, 8C to 128, 256, 512, 1024
         incre_modules = []
@@ -703,55 +709,109 @@ def _load_pretrained(pretrained, model, model_url, use_ssld):
             "pretrained type is not available. Please use `string` or `boolean` type."
         )
 
+def load_from_pdparams(model, dict_path):
+    model_state_dict = model.state_dict()
+    para_state_dict = paddle.load(dict_path)
+    mkeys = model_state_dict.keys()
+    num_params_loaded = 0
+    num_params_skip = 0
+
+
+    # print(list(model_state_dict.keys())[:5])
+    # print(list(para_state_dict.keys())[:5])
+
+    # region base model load&check
+    for k in mkeys:
+
+        if k.startswith('down_stem.'):
+            kt = k[len('down_stem.'):]
+        elif k.startswith('class_head.'):
+            kt = k[len('class_head.'):]
+        elif k.startswith('stage2.stage.'):
+            kt = k.replace('stage2.stage.', 'stage2.')
+        elif k.startswith('stage3.stage.'):
+            kt = k.replace('stage3.stage.', 'stage3.')
+        elif k.startswith('stage4.stage.'):
+            kt = k.replace('stage4.stage.', 'stage4.')
+        elif k.startswith('transition1.transition.'):
+            kt = k.replace('transition1.transition.', 'transition1.')
+        elif k.startswith('transition2.transition.'):
+            kt = k.replace('transition2.transition.', 'transition2.')
+        elif k.startswith('transition3.transition.'):
+            kt = k.replace('transition3.transition.', 'transition3.')
+        else:
+            kt = k
+
+        if kt.endswith('._mean'):
+            kt = kt.replace('._mean', '.running_mean')
+        elif kt.endswith('._variance'):
+            kt = kt.replace('._variance', '.running_var')
+        else:
+            kt = kt
+
+        if k in para_state_dict:
+            if list(para_state_dict[k].shape) != list(model_state_dict[k].shape):
+                print("[SKIP] Shape of pretrained params {} doesn't match.(Pretrained: {}, Actual: {})"
+                               .format(k, para_state_dict[k].shape, model_state_dict[k].shape))
+                num_params_skip += 1
+            else:
+                model_state_dict[k] = para_state_dict[k]
+                num_params_loaded += 1
+        elif kt in para_state_dict:
+            if list(para_state_dict[kt].shape) != list(model_state_dict[k].shape):
+                print("[SKIP] Shape of pretrained params {} doesn't match.(Pretrained: {}, Actual: {})"
+                               .format(kt, para_state_dict[kt].shape, model_state_dict[k].shape))
+                num_params_skip += 1
+            else:
+                model_state_dict[k] = para_state_dict[kt]
+                num_params_loaded += 1
+        else:
+            print("[Drop] Pretrained params {}{} doesn't exist!"
+                           .format(k, model_state_dict[k].shape))
+    # endregion
+
+    print('total: loaded %d, model contain %d, file contain %d, skip %d' %
+          (num_params_loaded, len(model_state_dict), len(para_state_dict), num_params_skip))
+    return model
+
+
 def HRFormer_tiny(pretrained=False, use_ssld=False, **kwargs):
     """
     """
-    model = HRTransformer(num_modules=[1,1,3,2], 
-                          num_channels=[18,36,72,144], 
-                          num_heads=[1,2,4,8],
+    model = HRTransformer(num_modules=[1, 1, 3, 2],
+                          num_channels=[18, 36, 72, 144],
+                          num_heads=[1, 2, 4, 8],
                           drop_path_rate=0.1,
-                          attn_types=['isa_local', [2,2,1], [2,3,3], [2,4,2]],
-                          ffn_types=['conv_mlp', [2,2,1], [2,3,3], [2,4,2]],
+                          attn_types=['isa_local', [2, 2, 1], [2, 3, 3], [2, 4, 2]],
+                          ffn_types=['conv_mlp', [2, 2, 1], [2, 3, 3], [2, 4, 2]],
                           **kwargs)
     _load_pretrained(pretrained, model, MODEL_URLS["HRFormer_tiny"], use_ssld)
     return model
 
+
 def HRFormer_small(pretrained=False, use_ssld=False, **kwargs):
     """
     """
-    model = HRTransformer(num_modules=[1,1,4,2], 
-                          num_channels=[32,64,128,256], 
-                          num_heads=[1,2,4,8],
+    model = HRTransformer(num_modules=[1, 1, 4, 2],
+                          num_channels=[32, 64, 128, 256],
+                          num_heads=[1, 2, 4, 8],
                           drop_path_rate=0.1,
-                          attn_types=['isa_local', [2,2,1], [2,3,4], [2,4,2]],
-                          ffn_types=['conv_mlp', [2,2,1], [2,3,4], [2,4,2]],
+                          attn_types=['isa_local', [2, 2, 1], [2, 3, 4], [2, 4, 2]],
+                          ffn_types=['conv_mlp', [2, 2, 1], [2, 3, 4], [2, 4, 2]],
                           **kwargs)
     _load_pretrained(pretrained, model, MODEL_URLS["HRFormer_small"], use_ssld)
     return model
 
+
 def HRFormer_base(pretrained=False, use_ssld=False, **kwargs):
     """
     """
-    model = HRTransformer(num_modules=[1,1,4,2], 
-                          num_channels=[78,156,312,624], 
-                          num_heads=[2,4,8,16],
+    model = HRTransformer(num_modules=[1, 1, 4, 2],
+                          num_channels=[78, 156, 312, 624],
+                          num_heads=[2, 4, 8, 16],
                           drop_path_rate=0.2,
-                          attn_types=['isa_local', [2,2,1], [2,3,4], [2,4,2]],
-                          ffn_types=['conv_mlp', [2,2,1], [2,3,4], [2,4,2]],
+                          attn_types=['isa_local', [2, 2, 1], [2, 3, 4], [2, 4, 2]],
+                          ffn_types=['conv_mlp', [2, 2, 1], [2, 3, 4], [2, 4, 2]],
                           **kwargs)
     _load_pretrained(pretrained, model, MODEL_URLS["HRFormer_base"], use_ssld)
     return model
-
-
-
-
-
-
-
-
-
-
-
-
-
-

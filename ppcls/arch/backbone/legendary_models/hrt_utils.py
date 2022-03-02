@@ -34,7 +34,7 @@ def _make_layer(
                     planes * block.expansion,
                     kernel_size=1,
                     stride=stride,
-                    bias_attr=None
+                    bias_attr=False,
                 ),
                 nn.BatchNorm2D(planes * block.expansion, momentum=BN_MOMENTUM),
             )
@@ -70,14 +70,14 @@ class Bottleneck(nn.Layer):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2D(inplanes, planes, kernel_size=1, bias_attr=None)
+        self.conv1 = nn.Conv2D(inplanes, planes, kernel_size=1, bias_attr=False)
         self.bn1 = nn.BatchNorm2D(planes, momentum=BN_MOMENTUM)
         self.conv2 = nn.Conv2D(
-            planes, planes, kernel_size=3, stride=stride, padding=1, bias_attr=None
+            planes, planes, kernel_size=3, stride=stride, padding=1, bias_attr=False
         )
         self.bn2 = nn.BatchNorm2D(planes, momentum=BN_MOMENTUM)
         self.conv3 = nn.Conv2D(
-            planes, planes * self.expansion, kernel_size=1, bias_attr=None
+            planes, planes * self.expansion, kernel_size=1, bias_attr=False
         )
         self.bn3 = nn.BatchNorm2D(planes * self.expansion, momentum=BN_MOMENTUM)
         self.relu = nn.ReLU()
@@ -111,7 +111,7 @@ class BottleneckDWP(nn.Layer):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BottleneckDWP, self).__init__()
-        self.conv1 = nn.Conv2D(inplanes, planes, kernel_size=1, bias_attr=None)
+        self.conv1 = nn.Conv2D(inplanes, planes, kernel_size=1,  bias_attr=False,)
         self.bn1 = nn.BatchNorm2D(planes, momentum=BN_MOMENTUM)
         self.conv2 = nn.Conv2D(
             planes,
@@ -119,13 +119,12 @@ class BottleneckDWP(nn.Layer):
             kernel_size=3,
             stride=stride,
             padding=1,
-            bias_attr=None,
+            bias_attr=False,
             groups=planes,
         )
         self.bn2 = nn.BatchNorm2D(planes, momentum=BN_MOMENTUM)
         self.conv3 = nn.Conv2D(
-            planes, planes * self.expansion, kernel_size=1, bias_attr=None
-        )
+            planes, planes * self.expansion, kernel_size=1,  bias_attr=False)
         self.bn3 = nn.BatchNorm2D(planes * self.expansion, momentum=BN_MOMENTUM)
         self.relu = nn.ReLU()
         self.downsample = downsample
@@ -476,16 +475,7 @@ class LocalPermuteModule(object):
         x = x.transpose((2, 4, 0, 1, 3, 5))
         x = x.reshape((ph*pw, n*qh*qw, c))
         return x
-        # return rearrange(
-        #     x,
-        #     "n (qh ph) (qw pw) c -> (ph pw) (n qh qw) c",
-        #     n=n,
-        #     qh=h // self.lgs[0],
-        #     ph=self.lgs[0],
-        #     qw=w // self.lgs[0],
-        #     pw=self.lgs[0],
-        #     c=c,
-        # )
+
 
     def rev_permute(self, x, size):
         n, h, w, c = size
@@ -497,16 +487,7 @@ class LocalPermuteModule(object):
         x = x.transpose((2, 3, 0, 4, 1, 5))
         x = x.reshape((n, qh*ph, qw*pw, c))
         return x
-        # return rearrange(
-        #     x,
-        #     "(ph pw) (n qh qw) c -> n (qh ph) (qw pw) c",
-        #     n=n,
-        #     qh=h // self.lgs[0],
-        #     ph=self.lgs[0],
-        #     qw=w // self.lgs[0],
-        #     pw=self.lgs[0],
-        #     c=c,
-        # )
+
 
 
 class MultiheadISAAttention(nn.Layer):
